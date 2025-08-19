@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sniff Staking — Validator that sniffs out opportunities</title>
+  <meta name="description" content="Sniff Staking: Solana validator that sniffs out performance opportunities. Premium, secure, and playful brand with a tech-forward site.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@700;800&family=Nunito:wght@700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --gold: #FFD700;
+      --gold-2: #E6C200;
+      --blue: #0A1F44;
+      --blue-2:#13294B;
+      --black:#0D0D0D;
+      --white:#ffffff;
+      --muted:#A9B4C5;
+      --hdr: 70px;                 /* базова висота хедера */
+      --hdr-scrolled: 64px;        /* висота у scrolled-стані */
+    }
+
+    html,body{height:100%;}
+    html{scroll-behavior:smooth;} /* плавний скрол */
+
+    body{
+      margin:0;
+      background:
+        radial-gradient(1200px 800px at 70% -10%, rgba(255,215,0,.10), transparent 40%),
+        radial-gradient(800px 600px at 10% 10%, rgba(19,41,75,.6), transparent 60%),
+        linear-gradient(180deg, #061022, var(--blue));
+      color:var(--white);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overflow-x:hidden;
+    }
+
+    :root{ --paw: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g fill='%23FFD700'><circle cx='6' cy='7' r='2'/><circle cx='12' cy='6' r='2'/><circle cx='18' cy='7' r='2'/><path d='M12 10c-3.5 0-6 2.2-6 4.7c0 1.6 1.3 2.3 2.8 2.3c1.2 0 2.3-.5 3.2-1.3c.9.8 2 1.3 3.2 1.3c1.5 0 2.8-.7 2.8-2.3C18 12.2 15.5 10 12 10Z'/></g></svg>") 12 12, auto; }
+
+    header{position:fixed; inset:0 0 auto 0; height:var(--hdr); display:flex; align-items:center; justify-content:center; z-index:50; transition:all .35s ease;}
+    header.scrolled{backdrop-filter:saturate(140%) blur(8px); background:rgba(6,16,34,.65); box-shadow:0 8px 32px rgba(0,0,0,.25); height:var(--hdr-scrolled);} 
+
+    .nav{width:min(1200px, 92vw); display:flex; align-items:center; justify-content:space-between;}
+    .brand{display:flex; align-items:center; gap:.75rem; text-decoration:none; color:var(--white);} 
+    .brand img{height:clamp(24px, 4.5vw, 40px); width:auto; margin-right:12px; object-fit:contain; image-rendering:auto;}
+    .brand b{font-family: Montserrat, Inter, sans-serif; font-weight:800; letter-spacing:.2px; font-size:1.125rem;}
+    .nav a{color:var(--muted); text-decoration:none; margin:0 .8rem; font-weight:600; font-size:.95rem;}
+    .nav a:hover{color:var(--white)}
+    .cta{background:linear-gradient(90deg, var(--gold), #FFEE88); color:#1f1b00; padding:.85rem 1.1rem; border-radius:14px; font-weight:800; border:1px solid rgba(0,0,0,.15);
+         box-shadow: 0 6px 14px rgba(255,215,0,.22),
+              0 0 0 1px rgba(0,0,0,.15) inset; cursor: var(--paw); transition: transform .2s ease, box-shadow .2s ease; text-decoration:none}
+    .cta:hover{transform:translateY(-1px); box-shadow:0 16px 36px rgba(255,215,0,.28)}
+
+    #bg{position:fixed; inset:0; z-index:0; pointer-events:none;}
+
+    /* Drawer */
+    .drawer{ position:fixed; inset:0 0 0 auto; width:min(86vw, 360px); background:#09142b; z-index:60; transform:translateX(100%); transition: transform .3s ease; box-shadow: -22px 0 70px rgba(0,0,0,.5);} 
+    .drawer.open{ transform:none; }
+    .drawer a{ display:block; padding:16px 18px; border-bottom:1px solid rgba(255,255,255,.06) }
+
+    .menu-btn{display:none}
+    @media (max-width: 760px){
+      .nav-links{display:none}
+      .menu-btn{ display:inline-flex; gap:8px; align-items:center; background:transparent; border:1px solid rgba(255,255,255,.1); color:#d6e1f5; padding:.55rem .8rem; border-radius:12px }
+    }
+
+    /* Overlay for mobile drawer */
+    .overlay{position:fixed; inset:0; background:rgba(0,0,0,.45); backdrop-filter:blur(2px); z-index:55; opacity:0; pointer-events:none; transition:opacity .25s ease}
+    .overlay.show{opacity:1; pointer-events:auto}
+    /* Prevent body scroll when drawer open */
+    body.no-scroll{overflow:hidden}
+
+    /* -------------------- Layout & Sections -------------------- */
+    .hero{position:relative; z-index:1; padding-top: 160px; padding-bottom: 160px; display:grid; place-items:center;}
+    .wrap{width:min(1200px, 92vw); display:grid; grid-template-columns: 1.2fr .8fr; gap:3rem; align-items:center;}
+    @media (max-width: 960px){ .wrap{grid-template-columns: 1fr; text-align:center;} }
+    .hero-img{object-fit: contain; height: 480px; max-width: 100%;}
+
+    .title{font-family: Montserrat, Inter, sans-serif; font-size:clamp(2rem, 3vw + 1rem, 3.2rem); line-height:1.06; margin:0 0 12px 0;}
+    .title span{background:linear-gradient(180deg, var(--gold), #FFC125 50%, #E6C200); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    .tag{color:var(--muted); font-size:1.05rem;}
+    .hero-actions{display:flex; gap:12px; align-items:center; margin-top:20px; flex-wrap:wrap; justify-content:flex-start}
+    @media (max-width: 960px){ .hero-actions{justify-content:center} }
+
+    .pill{display:inline-flex; align-items:center; gap:.5rem; padding:.5rem .75rem; background:rgba(255,255,255,.06); color:#cde2ff; border:1px solid rgba(255,255,255,.08); border-radius:999px; font-size:.9rem}
+
+    .badge{display:grid; place-items:center}
+    .badge svg{width:min(380px, 80vw); filter: drop-shadow(0 30px 80px rgba(0,0,0,.35));}
+
+    section{position:relative; z-index:1; padding: 120px 0;}
+    section[id]{scroll-margin-top: calc(var(--hdr) + 12px);} /* якір з урахуванням хедера */
+
+    .container{width:min(1200px, 92vw); margin:0 auto;}
+    h2{font-family: Montserrat; font-size: clamp(1.6rem, 2vw + 1rem, 2.2rem); margin:0 0 12px;}
+    p.lead{color:#cfd8e6; max-width:68ch}
+
+    .grid{display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:18px}
+    @media (max-width: 960px){ .grid{grid-template-columns:1fr} }
+
+    .card{background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:18px; padding:22px; transition: transform .2s ease, background .2s ease, box-shadow .2s ease; will-change: transform;}
+    .card:hover{transform: translateY(-4px); background:rgba(255,255,255,.06); box-shadow:0 18px 50px rgba(0,0,0,.25)}
+    .icon{width:40px; height:40px; display:grid; place-items:center; background:radial-gradient(circle at 30% 30%, #FFF6B0, var(--gold)); color:#1b1500; border-radius:10px; font-size:22px; font-weight:900}
+    .metric{font-size:2rem; font-weight:900; letter-spacing:.5px}
+
+    .radar{position:relative; overflow:hidden; border-radius:22px; background: radial-gradient(1000px 600px at 20% -20%, rgba(255,215,0,.08), transparent 40%), #07142d; border:1px solid rgba(255,255,255,.08)}
+    .radar:before{content:""; position:absolute; inset:-40% -40% auto -40%; height:200%; background: radial-gradient(220px 220px at var(--x, -20%) 50%, rgba(255,255,255,.12), rgba(255,255,255,0) 60%); filter: blur(2px); mix-blend-mode: screen; animation: sweep 6s linear infinite;}
+    @keyframes sweep{0%{transform:translateX(-40%)} 100%{transform:translateX(140%)} }
+
+    .chart-box{background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:12px}
+    canvas#lineChart{width:100%; height:260px;}
+
+    /* ---------- Visual transition helper for section start ---------- */
+    /* Робить м'який перелив тону, щоб компенсувати зміщення бекграунда після зміни контенту */
+    #tools{position:relative}
+    #tools::before{
+      content:""; position:absolute; left:0; right:0; top:-40px; height:120px; z-index:0;
+      background: linear-gradient(180deg, rgba(6,16,34,0) 0%, rgba(6,16,34,.35) 60%, rgba(6,16,34,0) 100%);
+      pointer-events:none;
+    }
+    #tools > *{position:relative; z-index:1}
+
+    footer{padding:40px 0 60px; color:#b7c4d6}
+    footer .cols{display:grid; grid-template-columns: 1.2fr .8fr; gap:18px}
+    @media (max-width: 900px){ footer .cols{grid-template-columns:1fr; text-align:center} }
+    .small{font-size:.92rem; color:#aebad0}
+
+    .reveal{opacity:0; transform: translateY(14px); transition: all .6s ease;}
+    .reveal.in{opacity:1; transform:none}
+
+    /* Coming soon styles */
+    .coming-soon { margin: 60px auto; padding: 40px 20px; max-width: 700px; background: rgba(10, 31, 68, 0.12); border: 1px solid #69D2FF; border-radius: 16px; text-align: center; color: #69D2FF; font-size: 1.4em; font-weight: 500; box-shadow: 0 0 15px rgba(105, 210, 255, 0.2); }
+    .loading-dots::after { content: "..."; animation: dots 1.5s steps(3, end) infinite; }
+    @keyframes dots { 0%, 20% { content: ""; } 40% { content: "."; } 60% { content: ".."; } 80%, 100% { content: "..."; } }
+
+    @media (max-width: 768px) { .brand img{ height:28px; margin-right:8px; } .hero{ padding-top: 100px; padding-bottom: 80px;} .hero-img{ height: 360px; } }
+
+    /* wider section */
+.delegate-wide .container { max-width: 1000px; }
+
+/* widget card */
+.ss-widget{
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.25);
+}
+
+.ss-top{
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1.6fr auto;
+  gap: 14px;
+  align-items: center;
+}
+.ss-label{ color:#aebad0; font-size:.9rem }
+.ss-value{ font-weight:800; letter-spacing:.2px; font-size:1.1rem }
+
+.ss-metrics{ display:flex; gap:18px; flex-wrap:wrap }
+.ss-metric span{ display:block; font-size:.8rem; color:#9fb2d6 }
+.ss-metric b{ font-size:1rem }
+
+.ss-connect .cta{ white-space:nowrap }
+
+.ss-body{ display:grid; grid-template-columns: 1fr auto; align-items:end; gap:16px; margin-top:16px }
+.ss-amount label{ display:block; margin-bottom:6px; color:#cfd8e6; font-weight:600 }
+.ss-amount-row{ display:flex; gap:8px; align-items:center }
+#ssAmount{
+  flex:1; padding:.9rem .9rem; border-radius:12px;
+  border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.25);
+  color:#fff; font-size:1.05rem;
+}
+.ss-max{
+  padding:.7rem .9rem; border-radius:12px; border:1px solid rgba(255,255,255,.15);
+  background:transparent; color:#cde2ff; cursor:pointer;
+}
+.ss-actions .cta{ padding: .9rem 1.1rem }
+
+.ss-status{
+  margin-top:14px; font-size:.95rem; color:#cde2ff;
+  min-height: 1.2em;
+}
+
+@media (max-width: 980px){
+  .ss-top{ grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px){
+  .ss-top{ grid-template-columns: 1fr; }
+  .ss-body{ grid-template-columns: 1fr; }
+}
+
+  </style>
+</head>
+<script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
+<script defer src="js/staking-widget.js"></script>
+
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+
+  <header id="hdr">
+    <nav class="nav">
+      <a class="brand" href="#">
+        <img src="logo.png" alt="Sniff Staking logo" />
+        <b>Sniff Staking</b>
+      </a>
+      <div class="nav-links">
+        <a href="#why">Why</a>
+        <a href="#radar">Radar</a>
+        <a href="#metrics">Metrics</a>
+        <a href="#tools">Tools</a>
+      </div>
+      <button class="menu-btn" id="menuBtn" aria-controls="drawer" aria-expanded="false">Menu ▾</button>
+      <a class="cta" href="#delegate" title="Delegate SOL">Delegate</a>
+    </nav>
+  </header>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <a href="#why" onclick="closeDrawer()">Why</a>
+    <a href="#radar" onclick="closeDrawer()">Radar</a>
+    <a href="#metrics" onclick="closeDrawer()">Metrics</a>
+    <a href="#tools" onclick="closeDrawer()">Tools</a>
+    <a href="#delegate" onclick="closeDrawer()">Delegate</a>
+  </aside>
+  <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <div>
+          <span class="pill">🐾 Sniffing out the best rewards</span>
+          <h1 class="title reveal"><span>Sniff Staking</span> — validator that sniffs out opportunities.</h1>
+          <p class="tag reveal" style="transition-delay:.08s">Premium security, playful brand. Bare metal ready, MEV-aware, and optimized for steady rewards.</p>
+          <div class="hero-actions reveal" style="transition-delay:.15s">
+            <a class="cta" href="#delegate">Delegate now</a>
+            <a class="cta" style="background:transparent;color:var(--gold);border:1px solid rgba(255,215,0,.35)" href="#docs">Docs</a>
+          </div>
+        </div>
+        <div class="image reveal" style="transition-delay:.2s">
+          <img class="hero-img" src="" alt="Sniff Staking hero image" />
+        </div>
+      </div>
+    </section>
+
+    <section id="why">
+      <div class="container">
+        <h2 class="reveal">Why Sniff Staking</h2>
+        <p class="lead reveal" style="transition-delay:.05s">Designed as a product-ready validator: secure by default, transparent by design, and playful enough to be memorable. Built to slot into pools and to ship small MVPs under one brand.</p>
+        <div class="grid" style="margin-top:18px">
+          <div class="card reveal">
+            <div class="icon">⏱</div>
+            <h3>Uptime Focus</h3>
+            <p>Monitoring-first setup with alerts, failover plans and regular audits.</p>
+            <div class="metric" data-target="99.9">0%</div>
+            <small class="small">rolling uptime goal</small>
+          </div>
+          <div class="card reveal" style="transition-delay:.05s">
+            <div class="icon">🛡</div>
+            <h3>Security Discipline</h3>
+            <p>Hardened OS, least-privilege ops, secrets rotation, off-site backups.</p>
+            <div class="metric" data-target="7">0</div>
+            <small class="small">layers in defense-in-depth</small>
+          </div>
+          <div class="card reveal" style="transition-delay:.1s">
+            <div class="icon">💹</div>
+            <h3>Performance</h3>
+            <p>MEV-aware configuration and continuous profiling for stable rewards.</p>
+            <div class="metric" data-target="24">0</div>
+            <small class="small">hour watch cycle</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="radar">
+      <div class="container">
+        <h2 class="reveal">Rewards Radar</h2>
+        <p class="lead reveal" style="transition-delay:.05s">Our playful scanner sweeps for opportunities. Under the hood: dashboards, sanity checks and alerts keep the node sharp.</p>
+        <div class="radar reveal" style="margin-top:16px">
+          <svg viewBox="0 0 900 260" preserveAspectRatio="none" style="display:block; width:100%; height:auto">
+            <defs>
+              <linearGradient id="gold-line" x1="0" x2="1">
+                <stop offset="0" stop-color="#FFF6B0"/>
+                <stop offset="1" stop-color="#FFD700"/>
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="900" height="260" fill="transparent"/>
+            <g fill="#2a3b5a" stroke="#3c527e" stroke-width="1">
+              <circle cx="70" cy="70" r="16"/><circle cx="190" cy="70" r="16"/><circle cx="310" cy="70" r="16"/><circle cx="430" cy="70" r="16"/><circle cx="550" cy="70" r="16"/><circle cx="670" cy="70" r="16"/><circle cx="790" cy="70" r="16"/>
+              <circle cx="130" cy="140" r="16"/><circle cx="250" cy="140" r="16"/><circle cx="370" cy="140" r="16"/><circle cx="490" cy="140" r="16"/><circle cx="610" cy="140" r="16"/><circle cx="730" cy="140" r="16"/>
+              <circle cx="90" cy="210" r="16"/><circle cx="210" cy="210" r="16"/><circle cx="330" cy="210" r="16"/><circle cx="450" cy="210" r="16"/><circle cx="570" cy="210" r="16"/><circle cx="690" cy="210" r="16"/><circle cx="810" cy="210" r="16"/>
+            </g>
+            <path d="M0 205 C 160 180, 320 120, 900 65" stroke="url(#gold-line)" stroke-width="3" fill="none"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section id="metrics">
+      <div class="container">
+        <h2 class="reveal">Metrics Snapshot</h2>
+        <p class="lead reveal" style="transition-delay:.05s">Synthetic example of effective rewards trend rendered client-side (no external libs). Replace with real data when ready.</p>
+        <div class="chart-box reveal" style="margin-top:14px">
+          <canvas id="lineChart" aria-label="Rewards line chart" role="img"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section id="tools">
+      <div class="container">
+        <h2 class="reveal">Sniff Staking Tools</h2>
+        <p class="lead reveal" style="transition-delay:.05s">
+          Our validator is building a set of small, useful tools for Solana stakers and validators.
+          They’re in progress and will appear here soon. The goal is to improve the experience
+          for everyone — from delegators to node operators.
+        </p>
+        <div class="coming-soon reveal">
+          <p class="loading-dots">Tools are currently in development</p>
+        </div>
+      </div>
+    </section>
+
+<section id="delegate" class="delegate-wide">
+  <div class="container">
+    <h2 class="reveal">Delegate</h2>
+    <p class="lead reveal" style="transition-delay:.05s">
+      Connect your wallet and delegate SOL directly to our validator. 
+      Your stake helps secure the network while earning steady rewards.
+    </p>
+
+    <!-- Widget -->
+    <div class="ss-widget reveal" id="ss-widget" style="transition-delay:.1s">
+      <div class="ss-top">
+        <div class="ss-balance">
+          <div class="ss-label">Balance</div>
+          <div class="ss-value" id="ssBalance">—</div>
+        </div>
+        <div class="ss-network">
+          <div class="ss-label">Network</div>
+          <div class="ss-value" id="ssNetwork">mainnet-beta</div>
+        </div>
+        <div class="ss-metrics">
+          <div class="ss-metric"><span>Commission</span><b id="ssCommission">—</b></div>
+          <div class="ss-metric"><span>Active Stake</span><b id="ssActiveStake">—</b></div>
+          <div class="ss-metric"><span>Epoch</span><b id="ssEpoch">—</b></div>
+        </div>
+        <div class="ss-connect">
+          <button class="cta" id="ssConnectBtn">Connect wallet</button>
+          <button class="cta" id="ssDisconnectBtn" style="display:none;background:transparent;color:var(--gold);border:1px solid rgba(255,215,0,.35)">Disconnect</button>
+        </div>
+      </div>
+
+      <div class="ss-body">
+        <div class="ss-amount">
+          <label for="ssAmount">Amount (SOL)</label>
+          <div class="ss-amount-row">
+            <input id="ssAmount" type="number" step="0.01" min="0" placeholder="0.00" />
+            <button class="ss-max" id="ssMaxBtn">MAX</button>
+          </div>
+          <small id="ssHint" class="small">A small rent-exempt reserve will remain to keep your wallet healthy.</small>
+        </div>
+
+        <div class="ss-actions">
+          <button class="cta" id="ssStakeBtn">Stake now</button>
+        </div>
+      </div>
+
+      <div class="ss-status" id="ssStatus" aria-live="polite"></div>
+    </div>
+    <!-- /Widget -->
+
+    <div class="small" style="opacity:.8;margin-top:14px">
+      Powered by native Solana stake instructions. No custody, you sign every tx.
+    </div>
+  </div>
+</section>
+
+  </main>
+
+  <footer>
+    <div class="container cols">
+      <div>
+        <div class="brand" style="margin-bottom:8px">
+          <img src="logo.png" alt="Sniff Staking logo" />
+          <b>Sniff Staking</b>
+        </div>
+        <div class="small">© <span id="yr"></span> Sniff Staking. Validator that sniffs out opportunities.</div>
+      </div>
+      <div>
+        <div class="small">Follow</div>
+        <div style="margin-top:8px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+          <a class="cta" style="padding:.5rem .8rem" href="#">Twitter</a>
+          <a class="cta" style="padding:.5rem .8rem" href="#">Discord</a>
+          <a class="cta" style="padding:.5rem .8rem" href="#">GitHub</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Header shrink on scroll
+    const hdr = document.getElementById('hdr');
+    const onScroll = () => hdr.classList.toggle('scrolled', window.scrollY > 8);
+    document.addEventListener('scroll', onScroll, {passive: true}); onScroll();
+
+    // Drawer with overlay
+    const menuBtn = document.getElementById('menuBtn');
+    const drawer = document.getElementById('drawer');
+    const overlay = document.getElementById('overlay');
+
+    function openDrawer(){
+      drawer.classList.add('open'); overlay.classList.add('show'); document.body.classList.add('no-scroll');
+      menuBtn.setAttribute('aria-expanded','true'); drawer.setAttribute('aria-hidden','false');
+    }
+    function closeDrawer(){
+      drawer.classList.remove('open'); overlay.classList.remove('show'); document.body.classList.remove('no-scroll');
+      menuBtn.setAttribute('aria-expanded','false'); drawer.setAttribute('aria-hidden','true');
+    }
+    window.closeDrawer = closeDrawer;
+    menuBtn?.addEventListener('click', ()=> drawer.classList.contains('open') ? closeDrawer() : openDrawer());
+    window.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDrawer(); });
+
+    // BG particles
+    const c = document.getElementById('bg'); const ctx = c.getContext('2d');
+    let dpr = Math.max(1, window.devicePixelRatio || 1);
+    let W, H, P=[];
+    function resize(){ W = c.width = Math.floor(innerWidth * dpr); H = c.height = Math.floor(innerHeight * dpr); }
+    resize(); addEventListener('resize', resize);
+    for(let i=0;i<120;i++){ P.push({x:Math.random()*W, y:Math.random()*H, r: Math.random()*2*dpr+0.3, vx:(Math.random()-.5)*.06, vy:(Math.random()-.5)*.06, a: Math.random()*0.6+0.2 }); }
+    function tick(){ ctx.clearRect(0,0,W,H); for(const p of P){ p.x+=p.vx; p.y+=p.vy; if(p.x<0) p.x=W; if(p.x>W) p.x=0; if(p.y<0) p.y=H; if(p.y>H) p.y=0; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fillStyle = `rgba(255,215,0,${p.a})`; ctx.fill(); } requestAnimationFrame(tick); }
+    tick();
+
+    // Reveal on scroll
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, {threshold:.15});
+    document.querySelectorAll('.reveal').forEach(el=> io.observe(el));
+
+    // Counters
+    const counters = document.querySelectorAll('.metric');
+    counters.forEach(el=>{ const target = parseFloat(el.dataset.target); let cur=0; const isPct = el.textContent.includes('%') || target > 10 && target < 101; const step = ()=>{ cur += (target - cur) * 0.08; if (Math.abs(target-cur) < 0.01) cur = target; el.textContent = isPct ? cur.toFixed(1) + '%' : Math.round(cur); if (cur !== target) requestAnimationFrame(step); }; step(); });
+
+    // Line chart
+    const lc = document.getElementById('lineChart');
+    const lctx = lc.getContext('2d');
+    function sizeChart(){ lc.width = lc.clientWidth * dpr; lc.height = lc.clientHeight * dpr; }
+    sizeChart(); addEventListener('resize', sizeChart);
+    const data = Array.from({length: 36}, (_,i)=> 4 + Math.sin(i/3)+ (Math.random()*0.5));
+    function drawChart(t=0){ lctx.clearRect(0,0,lc.width, lc.height); const pad=40*dpr; const w=lc.width-pad*2; const h=lc.height-pad*2; 
+      lctx.globalAlpha=.8; lctx.strokeStyle='rgba(255,255,255,.15)'; lctx.lineWidth=1*dpr; lctx.beginPath(); lctx.moveTo(pad, pad); lctx.lineTo(pad, pad+h); lctx.lineTo(pad+w, pad+h); lctx.stroke();
+      lctx.globalAlpha=1; const grad = lctx.createLinearGradient(pad,0,pad+w,0); grad.addColorStop(0,'#FFF6B0'); grad.addColorStop(1,'#FFD700'); lctx.strokeStyle=grad; lctx.lineWidth=2.2*dpr; lctx.beginPath();
+      const max = Math.max(...data)+1, min = Math.min(...data)-1;
+      data.forEach((v,i)=>{ const x = pad + (i/(data.length-1))*w; const y = pad + h - ( (v - min) / (max - min) ) * h; if(i===0) lctx.moveTo(x,y); else lctx.lineTo(x,y); });
+      lctx.stroke(); requestAnimationFrame(()=> drawChart(Math.min(data.length, t+0.6))); }
+    drawChart(0);
+
+    // Year in footer
+    document.getElementById('yr').textContent = new Date().getFullYear();
+
+  </script>
+</body>
+</html>
