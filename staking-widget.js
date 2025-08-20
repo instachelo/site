@@ -242,7 +242,9 @@ async function stakeNow(){
     }
     console.error("stakeNow error:", e);
     setStatus(msg || "Tx failed", true);
-  } 
+  } finally {
+    if (stakeBtn) { stakeBtn.disabled = false; }
+  }
 }
 
 // helper: poll тільки по сигнатурі
