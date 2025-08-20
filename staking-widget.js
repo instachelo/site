@@ -97,30 +97,40 @@
   }
 
   // ====== Preview Modal ======
-  function openPreviewModal({ from, amountSol, fee, validator }){
-    return new Promise((resolve)=>{
-      const m = document.createElement("div");
-      m.className="ss-modal";
-      m.innerHTML=`
-        <div class="ss-backdrop"></div>
-        <div class="ss-box">
-          <h3>Confirm Staking</h3>
-          <p><b>From:</b> ${from}</p>
-          <p><b>Validator:</b> ${validator}</p>
-          <p><b>Amount:</b> ${amountSol} SOL</p>
-          <p><b>Estimated Fee:</b> ${(fee/LAMPORTS_PER_SOL).toFixed(6)} SOL</p>
-          <div class="ss-actions">
-            <button id="ssConfirm">Confirm</button>
-            <button id="ssCancel">Cancel</button>
-          </div>
-        </div>`;
-      document.body.appendChild(m);
-      m.querySelector("#ssConfirm").onclick=()=>{m.remove(); resolve(true)};
-      m.querySelector("#ssCancel").onclick=()=>{m.remove(); resolve(false)};
-      m.querySelector(".ss-backdrop").onclick =()=>{ cleanup(); resolve(false) };
-      window.addEventListener('keydown', onEsc);
-    });
-  }
+function openPreviewModal({ from, amountSol, fee, validator }) {
+  return new Promise((resolve) => {
+    const m = document.createElement("div");
+    m.className = "ss-modal";
+    m.innerHTML = `
+      <div class="ss-backdrop"></div>
+      <div class="ss-box">
+        <h3>Confirm Staking</h3>
+        <p><b>From:</b> ${from}</p>
+        <p><b>Validator:</b> ${validator}</p>
+        <p><b>Amount:</b> ${amountSol} SOL</p>
+        <p><b>Estimated Fee:</b> ${(fee / LAMPORTS_PER_SOL).toFixed(6)} SOL</p>
+        <div class="ss-actions">
+          <button id="ssConfirm">Confirm</button>
+          <button id="ssCancel">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(m);
+
+    const cleanup = () => {
+      window.removeEventListener("keydown", onEsc);
+      m.remove();
+    };
+    const onEsc = (e) => {
+      if (e.key === "Escape") { cleanup(); resolve(false); }
+    };
+
+    m.querySelector("#ssConfirm").onclick = () => { cleanup(); resolve(true); };
+    m.querySelector("#ssCancel").onclick  = () => { cleanup(); resolve(false); };
+    m.querySelector(".ss-backdrop").onclick = () => { cleanup(); resolve(false); };
+    window.addEventListener("keydown", onEsc);
+  });
+}
 
 // ====== Stake flow with simulate (оновлено і стабільно) ======
 async function stakeNow(){
@@ -216,10 +226,13 @@ async function stakeNow(){
 
     // підтвердження лише по сигнатурі (без blockhash) — не зловим "expired"
     await waitForConfirmationBySignature(signature, 90000);
-    setStatus(`✅ Staked & delegated! <a href="https://solscan.io/tx/${signature}" target="_blank" rel="noopener">View on Solscan</a>`);
-    if (statusEl) statusEl.style.color = "#cde2ff";
-    if (statusEl) statusEl.innerHTML = statusEl.textContent;
-
+    if (statusEl) {
+  statusEl.style.color = "#cde2ff";
+  statusEl.innerHTML = `✅ Staked & delegated! 
+    <a href="https://solscan.io/tx/${signature}" target="_blank" rel="noopener">
+      View on Solscan
+    </a>`;
+}
     await refreshWalletUI();
 
   } catch (e) {
@@ -233,10 +246,14 @@ async function stakeNow(){
           const st = await connection.getSignatureStatuses([sig], { searchTransactionHistory: true });
           const s = st?.value?.[0];
           if (s && (s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized")) {
-            setStatus("✅ Staked & delegated! Tx: " + sig.slice(0,10) + "…");
-            await refreshWalletUI();
-            return;
-          }
+  if (statusEl) {
+    statusEl.style.color = "#cde2ff";
+    statusEl.innerHTML = `✅ Staked & delegated! 
+      <a href="https://solscan.io/tx/${sig}" target="_blank" rel="noopener">View on Solscan</a>`;
+  }
+  await refreshWalletUI();
+  return;
+}
         }
       } catch {}
     }
@@ -244,8 +261,8 @@ async function stakeNow(){
     setStatus(msg || "Tx failed", true);
   } finally {
     if (stakeBtn) { stakeBtn.disabled = false; }
-  }
-}
+  };
+};
 
 // helper: poll тільки по сигнатурі
 async function waitForConfirmationBySignature(signature, timeoutMs = 60000) {
