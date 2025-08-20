@@ -200,3 +200,14 @@
   });
 })();
 
+function buildStakeTransaction() {
+  return { tx: "dummy" }; // поки що заглушка
+}
+async function simulateTransaction(tx) {
+  return { logs: ["Simulation not implemented"] };
+}
+function openPreviewModal(tx, simRes) {
+  alert("Preview: " + JSON.stringify(simRes));
+}
+
+
