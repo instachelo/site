@@ -129,7 +129,7 @@ async function stakeNow(){
       setStatus("Connect wallet", true);
       return;
     }
-    const amount = Number(amountEl.value);
+    const amount = Number(String(amountEl.value).replace(',', '.'));
     if (!isFinite(amount) || amount <= 0) {
       setStatus("Enter valid amount", true);
       return;
