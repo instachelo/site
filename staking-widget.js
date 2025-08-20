@@ -216,7 +216,10 @@ async function stakeNow(){
 
     // підтвердження лише по сигнатурі (без blockhash) — не зловим "expired"
     await waitForConfirmationBySignature(signature, 90000);
-    setStatus("✅ Staked & delegated! Tx: " + signature.slice(0,10) + "…");
+    setStatus(`✅ Staked & delegated! <a href="https://solscan.io/tx/${signature}" target="_blank" rel="noopener">View on Solscan</a>`);
+    if (statusEl) statusEl.style.color = "#cde2ff";
+    if (statusEl) statusEl.innerHTML = statusEl.textContent;
+
     await refreshWalletUI();
 
   } catch (e) {
