@@ -120,66 +120,109 @@
     });
   }
 
-  // ====== Stake flow with simulate ======
-  async function stakeNow(){
+  // ====== Stake flow with simulate (оновлено) ======
+async function stakeNow(){
+  try {
+    setStatus(""); // очистимо статус
+
+    if (!state.wallet || !state.walletPubkey) {
+      setStatus("Connect wallet", true);
+      return;
+    }
+
+    const amount = Number(amountEl.value);
+    if (!isFinite(amount) || amount <= 0) {
+      setStatus("Enter valid amount", true);
+      return;
+    }
+
+    // мінімум на ренту для stake account (~200 байт)
+    const rentExempt = await connection.getMinimumBalanceForRentExemption(200);
+    const lamports   = Math.floor(amount * LAMPORTS_PER_SOL);
+    if (lamports < rentExempt + 5000) {
+      setStatus(`Too low (need ≥ ${(rentExempt / LAMPORTS_PER_SOL).toFixed(4)} SOL for rent)`, true);
+      return;
+    }
+
+    // 1) готуємо новий stake-акаунт і інструкції
+    const stakeAccount = Keypair.generate();
+    const createIx = StakeProgram.createAccount({
+      fromPubkey: state.walletPubkey,
+      stakePubkey: stakeAccount.publicKey,
+      authorized: new Authorized(state.walletPubkey, state.walletPubkey),
+      lockup: new Lockup(0,0,state.walletPubkey),
+      lamports
+    });
+    const delegateIx = StakeProgram.delegate({
+      stakePubkey: stakeAccount.publicKey,
+      authorizedPubkey: state.walletPubkey,
+      votePubkey: new PublicKey(VALIDATOR_VOTE_PUBKEY)
+    });
+
+    // 2) СИМУЛЯЦІЯ: завжди беремо свіжий blockhash, підписуємо stakeAccount + wallet
+    const { blockhash: simBlockhash } = await connection.getLatestBlockhash("finalized");
+    const txSim = new Transaction({ feePayer: state.walletPubkey, recentBlockhash: simBlockhash })
+      .add(createIx, delegateIx);
+    txSim.partialSign(stakeAccount);
+
+    // Симулюємо з підписом гаманця, щоб не завалитися на sigVerify
+    let feeLamports = 5000;
     try {
-      if (!state.walletPubkey) { setStatus("Connect wallet",true); return; }
-      const amount = Number(amountEl.value);
-      if (!isFinite(amount)||amount<=0) { setStatus("Enter valid amount",true); return; }
-
-      const rentExempt = await connection.getMinimumBalanceForRentExemption(200);
-      const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
-      if (lamports < rentExempt + 5000) {
-        setStatus("Too low (need rent exempt).", true); return;
-      }
-
-      const stakeAccount = Keypair.generate();
-      const createIx = StakeProgram.createAccount({
-        fromPubkey: state.walletPubkey,
-        stakePubkey: stakeAccount.publicKey,
-        authorized: new Authorized(state.walletPubkey, state.walletPubkey),
-        lockup: new Lockup(0,0,state.walletPubkey),
-        lamports
-      });
-      const delegateIx = StakeProgram.delegate({
-        stakePubkey: stakeAccount.publicKey,
-        authorizedPubkey: state.walletPubkey,
-        votePubkey: new PublicKey(VALIDATOR_VOTE_PUBKEY)
-      });
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("finalized");
-      const tx = new Transaction({ feePayer: state.walletPubkey, recentBlockhash:blockhash }).add(createIx, delegateIx);
-      tx.partialSign(stakeAccount);
-
-      // simulate before send
-      let fee=5000;
-      try {
-        const sim = await connection.simulateTransaction(tx);
-        fee = sim.value?.fee || fee;
-      } catch(e){}
-
-      const ok = await openPreviewModal({
-        from: state.walletPubkey.toBase58(),
-        amountSol: amount,
-        fee,
-        validator: VALIDATOR_VOTE_PUBKEY
-      });
-      if (!ok) { setStatus("Cancelled"); return; }
-
-      // send
-      let signature;
-      if (state.wallet.signAndSendTransaction) {
-        const { signature:sig } = await state.wallet.signAndSendTransaction(tx);
-        signature=sig;
+      const signedForSim = await state.wallet.signTransaction(txSim);
+      const sim = await connection.simulateTransaction(signedForSim, { sigVerify: true });
+      // деякі RPC повертають fee у симуляції; якщо ні — спробуємо порахувати через message fee
+      if (sim.value?.fee != null) {
+        feeLamports = sim.value.fee;
       } else {
-        const signed = await state.wallet.signTransaction(tx);
-        signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight:false });
+        try {
+          const feeResp = await connection.getFeeForMessage(signedForSim.compileMessage());
+          if (feeResp?.value != null) feeLamports = feeResp.value;
+        } catch {}
       }
-      setStatus("Sending… " + signature.slice(0,10)+"…");
-      await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-      setStatus("✅ Staked! Tx: "+signature.slice(0,10)+"…");
-      await refreshWalletUI();
-    } catch(e){ setStatus(e.message||"Tx failed",true); }
+      if (sim.value?.err) {
+        setStatus(`Simulation error: ${JSON.stringify(sim.value.err)}`, true);
+        return;
+      }
+    } catch (e) {
+      // якщо симуляція не вдалась — не блокуємо, але попереджаємо
+      console.warn("simulateTransaction failed:", e);
+    }
+
+    // 3) превʼю: показуємо модалку з підсумком (використовуємо твою modal-функцію)
+    const ok = await openPreviewModal({
+      from: state.walletPubkey.toBase58(),
+      amountSol: amount,
+      fee: feeLamports,
+      validator: VALIDATOR_VOTE_PUBKEY
+    });
+    if (!ok) { setStatus("Cancelled"); return; }
+
+    // 4) ВІДПРАВКА: створюємо НОВУ транзакцію зі свіжим blockhash (щоб не протухла),
+    // знову додаємо ті ж інструкції, підписуємо stakeAccount і гаманець.
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("finalized");
+    const txSend = new Transaction({ feePayer: state.walletPubkey, recentBlockhash: blockhash })
+      .add(createIx, delegateIx);
+    txSend.partialSign(stakeAccount);
+
+    let signature;
+    if (state.wallet.signAndSendTransaction) {
+      const { signature: sig } = await state.wallet.signAndSendTransaction(txSend);
+      signature = typeof sig === "string" ? sig : (Array.isArray(sig) ? sig[0] : String(sig));
+    } else {
+      const signed = await state.wallet.signTransaction(txSend);
+      signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight:false, maxRetries:3 });
+    }
+
+    setStatus("Sending… " + signature.slice(0,10) + "…");
+    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+    setStatus("✅ Staked & delegated! Tx: " + signature.slice(0,10) + "…");
+
+    await refreshWalletUI();
+  } catch(e){
+    console.error("stakeNow error:", e);
+    setStatus(e?.message || "Tx failed", true);
   }
+}
 
   // ====== MAX helper ======
   async function setMax(){
@@ -200,14 +243,6 @@
   });
 })();
 
-function buildStakeTransaction() {
-  return { tx: "dummy" }; // поки що заглушка
-}
-async function simulateTransaction(tx) {
-  return { logs: ["Simulation not implemented"] };
-}
-function openPreviewModal(tx, simRes) {
-  alert("Preview: " + JSON.stringify(simRes));
-}
+
 
 
