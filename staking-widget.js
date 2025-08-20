@@ -123,6 +123,7 @@
 // ====== Stake flow with simulate (оновлено і стабільно) ======
 async function stakeNow(){
   try {
+    if (stakeBtn) { stakeBtn.disabled = true; }
     setStatus("");
 
     if (!state.wallet || !state.walletPubkey) {
@@ -236,6 +237,8 @@ async function stakeNow(){
     }
     console.error("stakeNow error:", e);
     setStatus(msg || "Tx failed", true);
+  } finally {
+    +   if (stakeBtn) { stakeBtn.disabled = false; }
   }
 }
 
