@@ -120,30 +120,27 @@
     });
   }
 
-  // ====== Stake flow with simulate (оновлено і стабільно) ======
+// ====== Stake flow with simulate (оновлено і стабільно) ======
 async function stakeNow(){
   try {
-    setStatus(""); // очистимо статус
+    setStatus("");
 
     if (!state.wallet || !state.walletPubkey) {
       setStatus("Connect wallet", true);
       return;
     }
-
     const amount = Number(amountEl.value);
     if (!isFinite(amount) || amount <= 0) {
       setStatus("Enter valid amount", true);
       return;
     }
 
-    // Мінімум на ренту для stake-акаунта (~200 байт)
-    const rentExempt = await connection.getMinimumBalanceForRentExemption(200);
+    // рента та сума
+    const rentExempt = await connection.getMinimumBalanceForRentExemption(StakeProgram.space);
     const lamports   = Math.floor(amount * LAMPORTS_PER_SOL);
 
-    // Підготуємо новий stake account + інструкції ОДИН РАЗ,
-    // і будемо перевикористовувати їх для симуляції та відправки
+    // готуємо НОВИЙ stake-account (один раз) + інструкції
     const stakeAccount = Keypair.generate();
-
     const createIx = StakeProgram.createAccount({
       fromPubkey: state.walletPubkey,
       stakePubkey: stakeAccount.publicKey,
@@ -151,57 +148,46 @@ async function stakeNow(){
       lockup: new Lockup(0,0,state.walletPubkey),
       lamports
     });
-
     const delegateIx = StakeProgram.delegate({
       stakePubkey: stakeAccount.publicKey,
       authorizedPubkey: state.walletPubkey,
       votePubkey: new PublicKey(VALIDATOR_VOTE_PUBKEY)
     });
 
-    // --------- 1) Оцінка fee + перевірка балансу ---------
+    // ---- 1) оцінимо fee та достатність балансу
     const { blockhash: feeBh } = await connection.getLatestBlockhash("finalized");
     const txForFee = new Transaction({ feePayer: state.walletPubkey, recentBlockhash: feeBh })
       .add(createIx, delegateIx);
     txForFee.partialSign(stakeAccount);
 
-    let feeLamports = 5000; // дефолт, якщо RPC не дасть точну ціну
+    let feeLamports = 5000;
     try {
       const feeResp = await connection.getFeeForMessage(txForFee.compileMessage());
       if (feeResp?.value != null) feeLamports = feeResp.value;
     } catch {}
 
-    // Баланс гаманця
     const balance = await connection.getBalance(state.walletPubkey);
-
-    // Перевірки
     if (lamports < rentExempt) {
-      setStatus(`Amount must be ≥ rent-exempt ${ (rentExempt / LAMPORTS_PER_SOL).toFixed(4) } SOL.`, true);
+      setStatus(`Amount must be ≥ rent-exempt ${(rentExempt / LAMPORTS_PER_SOL).toFixed(4)} SOL.`, true);
       return;
     }
     const totalCost = lamports + feeLamports;
     if (balance < totalCost) {
-      setStatus(`Insufficient SOL. Need ~${fmt(totalCost / LAMPORTS_PER_SOL,6)} SOL (amount + fee). Balance: ${fmt(balance / LAMPORTS_PER_SOL,6)} SOL.`, true);
+      setStatus(`Insufficient SOL. Need ~${(totalCost / LAMPORTS_PER_SOL).toFixed(6)} SOL (amount + fee).`, true);
       return;
     }
 
-    // --------- 2) Симуляція (без sigVerify, щоб не гаяти час підписом) ---------
+    // ---- 2) легка симуляція (без sigVerify)
     const { blockhash: simBh } = await connection.getLatestBlockhash("finalized");
     const txSim = new Transaction({ feePayer: state.walletPubkey, recentBlockhash: simBh })
       .add(createIx, delegateIx);
     txSim.partialSign(stakeAccount);
-
     try {
       const sim = await connection.simulateTransaction(txSim, { sigVerify: false });
-      if (sim.value?.err) {
-        setStatus(`Simulation error: ${JSON.stringify(sim.value.err)}`, true);
-        return;
-      }
-    } catch (e) {
-      // якщо симуляція не вдалась — не блокуємо, але попереджаємо
-      console.warn("simulateTransaction failed:", e);
-    }
+      if (sim.value?.err) { setStatus(`Simulation error: ${JSON.stringify(sim.value.err)}`, true); return; }
+    } catch(e) { console.warn("simulateTransaction failed:", e); }
 
-    // --------- 3) Превʼю (твоя модалка) ---------
+    // ---- 3) прев’ю
     const ok = await openPreviewModal({
       from: state.walletPubkey.toBase58(),
       amountSol: amount,
@@ -210,45 +196,60 @@ async function stakeNow(){
     });
     if (!ok) { setStatus("Cancelled"); return; }
 
-    // --------- 4) ВІДПРАВКА: новий blockhash + миттєва відправка ---------
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("finalized");
+    // ---- 4) ФІНАЛ: новий blockhash, підпис ТІЛЬКИ через signTransaction, відправка + poll
+    const { blockhash } = await connection.getLatestBlockhash("finalized");
     const txSend = new Transaction({ feePayer: state.walletPubkey, recentBlockhash: blockhash })
       .add(createIx, delegateIx);
     txSend.partialSign(stakeAccount);
 
-    let signature;
-    if (state.wallet.signAndSendTransaction) {
-      // Phantom / Backpack / інші можуть зробити це швидше своїм RPC
-      const { signature: sig } = await state.wallet.signAndSendTransaction(txSend);
-      signature = typeof sig === "string" ? sig : (Array.isArray(sig) ? sig[0] : String(sig));
-    } else {
-      const signed = await state.wallet.signTransaction(txSend);
-      signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight:false, maxRetries:3 });
-    }
+    // завжди signTransaction (уникаємо внутрішнього confirm у гаманця)
+    const signed = await state.wallet.signTransaction(txSend);
+    const signature = await connection.sendRawTransaction(signed.serialize(), {
+      skipPreflight: false,
+      maxRetries: 3
+    });
 
     setStatus("Sending… " + signature.slice(0,10) + "…");
 
-    // --------- 5) Підтвердження: без передачі blockhash (уникаємо 'expired') ---------
-    await waitForConfirmationBySignature(signature, 90000); // до 90с очікування
+    // підтвердження лише по сигнатурі (без blockhash) — не зловим "expired"
+    await waitForConfirmationBySignature(signature, 90000);
     setStatus("✅ Staked & delegated! Tx: " + signature.slice(0,10) + "…");
-
     await refreshWalletUI();
-  } catch(e){
+
+  } catch (e) {
+    // якщо все ж “expired”, перевіримо в історії — можливо, вже confirmed
+    const msg = String(e?.message || "");
+    const maybeSig = (msg.match(/[1-9A-HJ-NP-Za-km-z]{43,88}/) || [])[0]; // витягнемо підозрілу сигнатуру з тексту
+    if (msg.includes("block height exceeded") || msg.includes("expired")) {
+      try {
+        const sig = maybeSig; // якщо змогли дістати
+        if (sig) {
+          const st = await connection.getSignatureStatuses([sig], { searchTransactionHistory: true });
+          const s = st?.value?.[0];
+          if (s && (s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized")) {
+            setStatus("✅ Staked & delegated! Tx: " + sig.slice(0,10) + "…");
+            await refreshWalletUI();
+            return;
+          }
+        }
+      } catch {}
+    }
     console.error("stakeNow error:", e);
-    setStatus(e?.message || "Tx failed", true);
+    setStatus(msg || "Tx failed", true);
   }
 }
-// Підтвердження лише по сигнатурі (уникає expired block height)
+
+// helper: poll тільки по сигнатурі
 async function waitForConfirmationBySignature(signature, timeoutMs = 60000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
+  const started = Date.now();
+  for (;;) {
     const st = await connection.getSignatureStatuses([signature], { searchTransactionHistory: false });
     const s = st?.value?.[0];
     if (s?.err) throw new Error("Transaction error: " + JSON.stringify(s.err));
     if (s?.confirmationStatus === "confirmed" || s?.confirmationStatus === "finalized") return true;
+    if (Date.now() - started > timeoutMs) throw new Error("Confirmation timeout");
     await new Promise(r => setTimeout(r, 1200));
   }
-  throw new Error("Confirmation timeout");
 }
 
 
