@@ -117,6 +117,8 @@
       document.body.appendChild(m);
       m.querySelector("#ssConfirm").onclick=()=>{m.remove(); resolve(true)};
       m.querySelector("#ssCancel").onclick=()=>{m.remove(); resolve(false)};
+      m.querySelector(".ss-backdrop").onclick =()=>{ cleanup(); resolve(false) };
+      window.addEventListener('keydown', onEsc);
     });
   }
 
